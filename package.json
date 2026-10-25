@@ -1,0 +1,5 @@
+{
+  "name": "mtg-scanner",
+  "private": true,
+  "type": "module"
+}
