@@ -37,6 +37,10 @@
            border:0; border-radius:10px; }
   button:disabled { opacity:.5; }
   button[hidden] { display:none; }
+  button.secondary { color:var(--fg); background:#2a313b; font-weight:500; font-size:.85rem; padding:.7rem 1rem; }
+  details button { width:100%; margin-top:.6rem; }
+  #cardImg:not([src]) { visibility:hidden; }
+  #link[hidden] { display:none; }
 
   details { margin:1.2rem 1rem 0; color:var(--muted); font-size:.8rem; }
   pre { white-space:pre-wrap; word-break:break-word; background:var(--card); padding:.6rem; border-radius:8px; }
@@ -44,7 +48,7 @@
 </style>
 </head>
 <body>
-<header><h1>Escáner MTG</h1><span>fase 1 · una carta</span></header>
+<header><h1>Escáner MTG</h1><span>fase 1 · una carta · v0.2</span></header>
 <main>
   <div id="stage">
     <video id="video" playsinline muted autoplay></video>
@@ -70,6 +74,7 @@
 
   <details>
     <summary>Depuración</summary>
+    <button id="copyBtn" class="secondary" type="button">Copiar informe al portapapeles</button>
     <pre id="debug">—</pre>
     <canvas id="preview"></canvas>
   </details>

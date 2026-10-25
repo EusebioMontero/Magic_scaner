@@ -116,3 +116,107 @@ export function cardImage(card) {
     (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris);
   return u ? u.normal || u.small || null : null;
 }
+
+// ---- Diccionario local (names.json) ----------------------------------------
+// Formato: { v, date, names: [nombre inglés, ...], es: [[nombre español, índice en names], ...] }
+// Lo genera build_names.py. La búsqueda se hace en el propio móvil, sin red.
+
+let rowA = new Int32Array(256);
+let rowB = new Int32Array(256);
+
+// Levenshtein con tope: devuelve la distancia si es <= k; si no, k + 1.
+// Corta en cuanto toda una fila supera k, así que descartar es muy barato.
+export function boundedLevenshtein(a, b, k) {
+  const la = a.length;
+  const lb = b.length;
+  if (Math.abs(la - lb) > k) return k + 1;
+  if (a === b) return 0;
+  if (lb + 1 > rowA.length) {
+    rowA = new Int32Array(lb + 1);
+    rowB = new Int32Array(lb + 1);
+  }
+  let prev = rowA;
+  let cur = rowB;
+  for (let j = 0; j <= lb; j++) prev[j] = j;
+  for (let i = 1; i <= la; i++) {
+    cur[0] = i;
+    let rowMin = i;
+    const ca = a.charCodeAt(i - 1);
+    for (let j = 1; j <= lb; j++) {
+      const sub = prev[j - 1] + (ca === b.charCodeAt(j - 1) ? 0 : 1);
+      const del = prev[j] + 1;
+      const ins = cur[j - 1] + 1;
+      const v = sub < del ? (sub < ins ? sub : ins) : del < ins ? del : ins;
+      cur[j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > k) return k + 1;
+    const t = prev;
+    prev = cur;
+    cur = t;
+  }
+  return prev[lb] > k ? k + 1 : prev[lb];
+}
+
+// Prepara el diccionario para buscar: claves normalizadas agrupadas por longitud.
+// Las cartas de dos caras ("A // B") también se pueden encontrar solo por la cara frontal.
+export function buildIndex(dict) {
+  const byLen = new Map();
+  let size = 0;
+  const add = (text, idx, lang) => {
+    const addKey = (t) => {
+      const key = norm(t);
+      if (!key) return;
+      const e = { key, idx, lang, full: text };
+      const bucket = byLen.get(key.length);
+      if (bucket) bucket.push(e);
+      else byLen.set(key.length, [e]);
+      size++;
+    };
+    addKey(text);
+    const p = text.indexOf(' // ');
+    if (p > 0) addKey(text.slice(0, p));
+  };
+  dict.names.forEach((n, i) => add(n, i, 'en'));
+  const esByIdx = new Map();
+  for (const [t, i] of dict.es) {
+    add(t, i, 'es');
+    if (!esByIdx.has(i)) esByIdx.set(i, t);
+  }
+  return { names: dict.names, byLen, esByIdx, size };
+}
+
+// Busca en el diccionario el nombre más parecido a alguno de los candidatos.
+// Devuelve { idx, lang, score, nameEn, nameEs } o null si nada llega a minScore.
+export function lookup(index, candidates, minScore = 0.8) {
+  let best = null;
+  for (const cand of candidates) {
+    const q = norm(cand);
+    const lq = q.length;
+    if (lq < 3) continue;
+    const lo = Math.max(1, Math.ceil(minScore * lq));
+    const hi = Math.floor(lq / minScore);
+    for (let l = lo; l <= hi; l++) {
+      const bucket = index.byLen.get(l);
+      if (!bucket) continue;
+      const maxLen = Math.max(lq, l);
+      const k = Math.floor((1 - minScore) * maxLen + 1e-9);
+      for (const e of bucket) {
+        const d = boundedLevenshtein(q, e.key, k);
+        if (d > k) continue;
+        const score = 1 - d / maxLen;
+        if (!best || score > best.score) best = { e, score };
+      }
+    }
+    if (best && best.score === 1) break;
+  }
+  if (!best) return null;
+  const { e, score } = best;
+  return {
+    idx: e.idx,
+    lang: e.lang,
+    score,
+    nameEn: index.names[e.idx],
+    nameEs: e.lang === 'es' ? e.full : index.esByIdx.get(e.idx) || null,
+  };
+}
